@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Italian Verb Quest — Cloze Mode</title>
+  <style>
+    :root { --bg:#0f1222; --panel:#181c33; --accent:#7aa2ff; --ok:#62d26f; --bad:#ff6b6b; --text:#e8ecff; --muted:#9aa4c6; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,sans-serif;background:linear-gradient(180deg,#0d1020,#10142b);color:var(--text)}
+    header{padding:16px 20px;border-bottom:1px solid #22284a;background:rgba(0,0,0,.2);position:sticky;top:0;backdrop-filter:blur(6px)}
+    h1{margin:0;font-size:18px;letter-spacing:.3px}
+    .wrap{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:16px;}
+    .card{background:var(--panel);border:1px solid #22284a;border-radius:16px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .btn{appearance:none;border:1px solid #30365e;background:#1a1f3f;color:var(--text);padding:10px 12px;border-radius:12px;cursor:pointer}
+    .btn[disabled]{opacity:.5;cursor:not-allowed}
+    .btn.primary{background:linear-gradient(180deg,#3944a6,#2b357f);border-color:#3944a6}
+    .btn.ghost{background:transparent;border-color:#30365e}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid #2a2f55;color:var(--muted)}
+    .meter{height:14px;background:#121531;border:1px solid #282f62;border-radius:999px;overflow:hidden}
+    .meter>div{height:100%;background:linear-gradient(90deg,#6ea8ff,#7affc7);width:0%}
+    .q{font-size:24px;margin:6px 0 10px}
+    .choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .small{font-size:12px;color:var(--muted)}
+    .feedback{margin-top:8px;font-weight:600}
+    .ok{color:var(--ok)} .bad{color:var(--bad)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    details{border:1px solid #262c5a;border-radius:12px;padding:8px 10px}
+    summary{cursor:pointer;color:var(--muted)}
+    #confetti{position:fixed;inset:0;pointer-events:none;display:none}
+    .confetti{position:absolute;width:8px;height:14px;background:var(--accent);animation:drop 900ms ease-out forwards;opacity:.9}
+    @keyframes drop{to{transform:translateY(100vh) rotate(540deg);opacity:0}}
+    .error{background:#2b1730;border:1px solid #7a2b6a;color:#ffd8ec;padding:8px 10px;border-radius:10px;margin-top:8px;display:none}
+    label{font-size:12px;color:var(--muted)}
+    select, input[type="text"]{background:#131735;color:var(--text);border:1px solid #2a2f55;border-radius:10px;padding:8px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Italian Verb Quest — Cloze Mode</h1>
+  </header>
+  <div class="wrap">
+    <main class="card" id="app">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <label>Tijd&nbsp;</label>
+          <select id="tenseSel"></select>
+          <span class="chip"><input id="lockTense" type="checkbox"/> Alleen gekozen tijd</span>
+        </div>
+        <div class="row">
+          <span class="chip"><input id="strictMode" type="checkbox"/> Strict</span>
+          <span class="chip"><input id="typeMode" type="checkbox"/> Typen</span>
+          <span class="chip"><input id="clozeMode" type="checkbox"/> Cloze</span>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <label>Focus werkwoord&nbsp;</label>
+        <select id="verbSel"></select>
+        <button class="btn ghost" id="resetBtn">Reset progress</button>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="small">Vraag</div>
+        <div class="q mono" id="qText">—</div>
+        <div class="small" id="ctxText">—</div>
+        <div class="row" style="margin-top:10px" id="typeWrap">
+          <input id="typed" type="text" placeholder="Typ je antwoord…" style="flex:1" />
+          <button class="btn primary" id="checkBtn">Check</button>
+        </div>
+        <div class="choices" id="choices"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="speakBtn">🔊 Spreek vorm</button>
+          <button class="btn" id="speakCtxBtn">🗣️ Lees zin</button>
+          <button class="btn ghost" id="nextBtn">Volgende ↷</button>
+        </div>
+        <div class="feedback" id="feedback"></div>
+        <div class="error" id="errBox"></div>
+      </div>
+
+      <details style="margin-top:12px">
+        <summary>Referentie (huidig werkwoord + tijd)</summary>
+        <div id="refTable" class="mono" style="margin-top:8px"></div>
+      </details>
+    </main>
+
+    <aside class="card">
+      <div class="small">Voortgang</div>
+      <div class="meter" style="margin:6px 0 8px"><div id="bossBar"></div></div>
+      <div class="small">Boss-meter (80% = gevecht!)</div>
+      <div style="margin-top:10px" id="stats"></div>
+      <hr style="border:none;border-top:1px solid #262c5a;margin:12px 0">
+      <div class="small">Missies vandaag</div>
+      <ul id="missions" class="small"></ul>
+      <hr style="border:none;border-top:1px solid #262c5a;margin:12px 0">
+      <div class="small">Diagnostiek</div>
+      <div id="diag" class="mono small"></div>
+    </aside>
+  </div>
+
+  <div id="confetti"></div>
+
+  <script>
+  (function(){
+    const VERSION = 'cloze-v1.1';
+    const storeKey = 'ivq_safe_progress_cloze';
+
+    const TENSES = {
+      'presente':'Presente',
+      'imperfetto':'Imperfetto',
+      'futuro':'Futuro semplice',
+      'condizionale':'Condizionale presente',
+      'passato_prossimo':'Passato prossimo'
+    };
+
+    const PERSONS = [
+      ['io','1s'],['tu','2s'],['lui o lei','3s'],['noi','1p'],['voi','2p'],['loro','3p']
+    ];
+
+    // Irregular future stems for common verbs
+    const FUTURO_STEMS = {
+      essere: 'sar', avere: 'avr', andare: 'andr', fare: 'far', dare: 'dar', stare: 'star',
+      potere: 'potr', dovere: 'dovr', volere: 'vorr', sapere: 'sapr', vedere: 'vedr', // vedere not in list but kept for completeness
+      vivere: 'vivr', bere: 'berr', rimanere: 'rimarr', tenere: 'terr', venire: 'verr',
+      dire: 'dir', uscire: 'uscir', morire: 'morir', nascere: 'nascer', scegliere: 'sceglier'
+    };
+
+    const VERBS = [
+      {inf:'essere',aux:'essere',pp:'stato', irr:{presente:['sono','sei','è','siamo','siete','sono']}},
+      {inf:'avere',aux:'avere',pp:'avuto', irr:{presente:['ho','hai','ha','abbiamo','avete','hanno']}},
+      {inf:'andare',aux:'essere',pp:'andato', irr:{presente:['vado','vai','va','andiamo','andate','vanno']}},
+      {inf:'fare',aux:'avere',pp:'fatto', irr:{presente:['faccio','fai','fa','facciamo','fate','fanno']}},
+      {inf:'dire',aux:'avere',pp:'detto', irr:{presente:['dico','dici','dice','diciamo','dite','dicono']}},
+      {inf:'potere',aux:'avere',pp:'potuto', irr:{presente:['posso','puoi','può','possiamo','potete','possono']}},
+      {inf:'dovere',aux:'avere',pp:'dovuto', irr:{presente:['devo','devi','deve','dobbiamo','dovete','devono']}},
+      {inf:'volere',aux:'avere',pp:'voluto', irr:{presente:['voglio','vuoi','vuole','vogliamo','volete','vogliono']}},
+      {inf:'venire',aux:'essere',pp:'venuto', irr:{presente:['vengo','vieni','viene','veniamo','venite','vengono']}},
+      {inf:'uscire',aux:'essere',pp:'uscito', irr:{presente:['esco','esci','esce','usciamo','uscite','escono']}},
+      {inf:'bere',aux:'avere',pp:'bevuto', irr:{presente:['bevo','bevi','beve','beviamo','bevete','bevono']}},
+      {inf:'stare',aux:'essere',pp:'stato', irr:{presente:['sto','stai','sta','stiamo','state','stanno']}},
+      {inf:'dare',aux:'avere',pp:'dato', irr:{presente:['do','dai','dà','diamo','date','danno']}},
+      {inf:'sapere',aux:'avere',pp:'saputo', irr:{presente:['so','sai','sa','sappiamo','sapete','sanno']}},
+      {inf:'rimanere',aux:'essere',pp:'rimasto', irr:{presente:['rimango','rimani','rimane','rimaniamo','rimanete','rimangono']}},
+      {inf:'tenere',aux:'avere',pp:'tenuto', irr:{presente:['tengo','tieni','tiene','teniamo','tenete','tengono']}},
+      {inf:'scegliere',aux:'avere',pp:'scelto', irr:{presente:['scelgo','scegli','sceglie','scegliamo','scegliete','scelgono']}},
+      {inf:'morire',aux:'essere',pp:'morto', irr:{}},
+      {inf:'nascere',aux:'essere',pp:'nato', irr:{}},
+      // Regulars
+      {inf:'parlare',aux:'avere',pp:'parlato', class:'are'},
+      {inf:'credere',aux:'avere',pp:'creduto', class:'ere'},
+      {inf:'finire',aux:'avere',pp:'finito', class:'ire-isc'},
+      {inf:'dormire',aux:'avere',pp:'dormito', class:'ire'},
+      {inf:'mettere',aux:'avere',pp:'messo', irr:{}},
+      {inf:'prendere',aux:'avere',pp:'preso', irr:{}},
+    ];
+
+    function load(){ try{ return JSON.parse(localStorage.getItem(storeKey)||'{}'); }catch{return{}} }
+    function save(x){ localStorage.setItem(storeKey, JSON.stringify(x)); }
+
+    const state = Object.assign({
+      xp:0, correct:0, total:0, streak:0, day:new Date().toDateString(),
+      strict:false, typeMode:false, lockTense:true, cloze:false,
+      tense:'presente', verb:'', boss:0, lastError:''
+    }, load());
+
+    if(state.day !== new Date().toDateString()){
+      state.day = new Date().toDateString(); state.correct=0; state.total=0;
+    }
+
+    const els = {
+      tenseSel: document.getElementById('tenseSel'),
+      lockTense: document.getElementById('lockTense'),
+      strictMode: document.getElementById('strictMode'),
+      typeMode: document.getElementById('typeMode'),
+      clozeMode: document.getElementById('clozeMode'),
+      verbSel: document.getElementById('verbSel'),
+      resetBtn: document.getElementById('resetBtn'),
+      qText: document.getElementById('qText'),
+      ctxText: document.getElementById('ctxText'),
+      choices: document.getElementById('choices'),
+      typeWrap: document.getElementById('typeWrap'),
+      typed: document.getElementById('typed'),
+      checkBtn: document.getElementById('checkBtn'),
+      nextBtn: document.getElementById('nextBtn'),
+      speakBtn: document.getElementById('speakBtn'),
+      speakCtxBtn: document.getElementById('speakCtxBtn'),
+      feedback: document.getElementById('feedback'),
+      bossBar: document.getElementById('bossBar'),
+      stats: document.getElementById('stats'), missions: document.getElementById('missions'),
+      refTable: document.getElementById('refTable'), errBox: document.getElementById('errBox'),
+      diag: document.getElementById('diag'), confetti: document.getElementById('confetti'),
+    };
+
+    for(const k in TENSES){ const o=document.createElement('option'); o.value=k; o.textContent=TENSES[k]; els.tenseSel.appendChild(o); }
+    els.tenseSel.value = state.tense;
+    const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='— alle —'; els.verbSel.appendChild(allOpt);
+    VERBS.forEach(v=>{ const o=document.createElement('option'); o.value=v.inf; o.textContent=v.inf; els.verbSel.appendChild(o); });
+    els.verbSel.value = state.verb;
+
+    els.lockTense.checked = !!state.lockTense;
+    els.strictMode.checked = !!state.strict;
+    els.typeMode.checked = !!state.typeMode;
+    els.clozeMode.checked = !!state.cloze;
+
+    let currentQ = null; let answered=false;
+
+    function normalize(s){
+      return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+    }
+
+    function stem(inf){ if(inf.endsWith('are')) return inf.slice(0,-3); if(inf.endsWith('ere')) return inf.slice(0,-3); if(inf.endsWith('ire')) return inf.slice(0,-3); return inf; }
+
+    function regularPresente(v, i){
+      const s = stem(v.inf);
+      if(v.class==='ire-isc') return [s+'isco',s+'isci',s+'isce',s+'iamo',s+'ite',s+'iscono'][i];
+      const map = v.class==='are' ? ['o','i','a','iamo','ate','ano'] : v.class==='ere' ? ['o','i','e','iamo','ete','ono'] : ['o','i','e','iamo','ite','ono'];
+      return s + map[i];
+    }
+
+    function regularImperfetto(v,i){
+      const s = stem(v.inf);
+      if(v.inf.endsWith('are')) return s + ['avo','avi','ava','avamo','avate','avano'][i];
+      if(v.inf.endsWith('ere')) return s + ['evo','evi','eva','evamo','evate','evano'][i];
+      return s + ['ivo','ivi','iva','ivamo','ivate','ivano'][i];
+    }
+
+    function futuroForm(base, i){
+      const map=['ò','ai','à','emo','ete','anno'];
+      return base + map[i];
+    }
+
+    function regularFuturo(v,i){
+      // Prefer irregular stems when known
+      const irr = FUTURO_STEMS[v.inf];
+      if(irr) return futuroForm(irr, i);
+      // Regular pattern: replace -are/-ere with -er-, -ire with -ir-
+      let base;
+      if(v.inf.endsWith('are')) base = v.inf.slice(0,-3) + 'er';
+      else if(v.inf.endsWith('ere')) base = v.inf.slice(0,-3) + 'er';
+      else if(v.inf.endsWith('ire')) base = v.inf.slice(0,-3) + 'ir';
+      else base = stem(v.inf);
+      return futuroForm(base, i);
+    }
+
+    function regularCondizionale(v,i){
+      // Mirror future stem + conditional endings
+      const irr = FUTURO_STEMS[v.inf];
+      let base;
+      if(irr) base = irr; else if(v.inf.endsWith('are')||v.inf.endsWith('ere')) base = v.inf.slice(0,-3) + 'er'; else if(v.inf.endsWith('ire')) base = v.inf.slice(0,-3) + 'ir'; else base = stem(v.inf);
+      const map=['ei','esti','ebbe','emmo','este','ebbero'];
+      return base + map[i];
+    }
+
+    function passatoProssimo(v,i){
+      const useEssere = (v.aux==='essere');
+      const avere = ['ho','hai','ha','abbiamo','avete','hanno'];
+      const essere = ['sono','sei','è','siamo','siete','sono'];
+      const pp = v.pp || (v.inf.endsWith('are')? stem(v.inf)+'ato': v.inf.endsWith('ere')? stem(v.inf)+'uto': stem(v.inf)+'ito');
+      const auxForm = useEssere? essere[i] : avere[i];
+      return auxForm + ' ' + pp;
+    }
+
+    function conj(v, tense, personIdx){
+      if(tense==='presente' && v.irr && v.irr.presente && v.irr.presente[personIdx]) return v.irr.presente[personIdx];
+      switch(tense){
+        case 'presente': return regularPresente(v, personIdx);
+        case 'imperfetto': return regularImperfetto(v, personIdx);
+        case 'futuro': return regularFuturo(v, personIdx);
+        case 'condizionale': return regularCondizionale(v, personIdx);
+        case 'passato_prossimo': return passatoProssimo(v, personIdx);
+        default: return '';
+      }
+    }
+
+    function contextFor(v, tense, personIdx){
+      const subj = PERSONS[personIdx][0];
+      const verbForm = conj(v, tense, personIdx);
+      const when = pick(['oggi','domani','stasera','adesso','più tardi']);
+      const places = ['a casa','a scuola','al lavoro','in città','al parco'];
+      const objs = ['una mail','un caffè','il libro','le chiavi','la verità'];
+      const byVerb = {
+        'morire': () => `${subj} ${verbForm} ${when}`,
+        'nascere': () => `${subj} ${verbForm} ${when}`,
+        'andare': () => `${subj} ${verbForm} ${pick(places)} ${when}`,
+        'venire': () => `${subj} ${verbForm} ${pick(places)} ${when}`,
+        'stare': () => `${subj} ${verbForm} ${pick(places)} ${when}`,
+        'essere': () => `${subj} ${verbForm} ${pick(places)} ${when}`,
+        'uscire': () => `${subj} ${verbForm} ${pick(places)} ${when}`,
+        'bere': () => `${subj} ${verbForm} ${pick(objs.filter(o=>o.includes('caffè')))} ${when}`,
+        'finire': () => `${subj} ${verbForm} ${pick(objs)} ${when}`,
+        'fare': () => `${subj} ${verbForm} ${pick(['una foto','una passeggiata','una telefonata'])} ${when}`,
+        'mettere': () => `${subj} ${verbForm} ${pick(['la giacca','le chiavi'])} ${when}`,
+        'parlare': () => `${subj} ${verbForm} con gli amici ${pick(places)}`,
+      };
+      const fn = byVerb[v.inf] || (()=> `${subj} ${verbForm} ${when}`);
+      return { full: fn(), verb: verbForm };
+    }
+
+    function maskVerbInContext(ctxFull, verb){
+      const re = new RegExp(verb.replace(/[-/\^$*+?.()|[\]{}]/g,'\$&'), 'i');
+      return ctxFull.replace(re, '_____');
+    }
+
+    function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+    function makeQuestion(){
+      const verbPool = state.verb? VERBS.filter(v=>v.inf===state.verb): VERBS;
+      const v = pick(verbPool);
+      const tense = state.lockTense? state.tense: pick(Object.keys(TENSES));
+      const personIdx = Math.floor(Math.random()*6);
+      const answer = conj(v, tense, personIdx);
+      const q = {verb:v, tense, personIdx, answer};
+      const wrongs = new Set(); const seen = new Set([normalize(answer)]);
+      while(wrongs.size<3){
+        const v2 = pick(VERBS); const a2 = conj(v2, tense, personIdx);
+        const n = normalize(a2);
+        if(a2 && !seen.has(n)) { wrongs.add(a2); seen.add(n); }
+      }
+      q.choices = shuffle([...wrongs, answer]);
+      const ctx = contextFor(v, tense, personIdx);
+      q.ctxFull = ctx.full; q.ctxMasked = maskVerbInContext(ctx.full, ctx.verb);
+      return q;
+    }
+
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a }
+
+    function renderRef(q){
+      const rows = PERSONS.map((p,idx)=> `<div>${p[0]} — <b>${conj(q.verb,q.tense,idx)}</b></div>`).join('');
+      els.refTable.innerHTML = `<div><b>${q.verb.inf}</b> • ${TENSES[q.tense]}</div><div style="margin-top:6px">${rows}</div>`;
+    }
+
+    function speak(text){ try{ const u=new SpeechSynthesisUtterance(text); u.lang='it-IT'; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch{} }
+
+    function updateStats(){
+      els.stats.innerHTML = `<div class="small">XP: <b>${state.xp}</b> • Acc: <b>${state.total? Math.round(100*state.correct/state.total):0}%</b> • Streak: <b>${state.streak}</b></div>`;
+      els.bossBar.style.width = Math.min(100,state.boss) + '%';
+      els.missions.innerHTML = `<li>+50 XP vandaag</li><li>10 correcte vandaag</li><li>5 correcte in Typen-modus</li>`;
+      els.diag.textContent = `version=${VERSION}
+lockTense=${state.lockTense} strict=${state.strict} typeMode=${state.typeMode} cloze=${state.cloze}
+verb=${state.verb||'(alle)'} tense=${state.tense}
+lastError=${state.lastError||'-'}`;
+    }
+
+    function showFeedback(ok, q){
+      els.feedback.innerHTML = ok? `<span class="ok">Perfetto!</span>` : `<span class="bad">Fout.</span> <span class="small">Juist: <b class="mono">${q.answer}</b></span>`;
+    }
+
+    function party(){
+      const host = els.confetti; host.innerHTML=''; host.style.display='block';
+      const N = 80; for(let i=0;i<N;i++){ const d=document.createElement('div'); d.className='confetti'; d.style.left=Math.random()*100+'vw'; d.style.background=`hsl(${Math.random()*360} 80% 60%)`; d.style.animationDelay=(Math.random()*0.5)+'s'; host.appendChild(d);} 
+      setTimeout(()=> host.style.display='none', 1200);
+    }
+
+    function award(ok){
+      state.total++;
+      if(ok){ state.correct++; state.xp+=10; state.boss = Math.min(100, state.boss+20); }
+      else { state.boss = Math.min(100, state.boss+5); }
+      if(state.boss>=80){ party(); setTimeout(()=> state.boss=0, 800); }
+    }
+
+    function safe(fn){
+      try{ fn(); els.errBox.style.display='none'; state.lastError=''; }
+      catch(e){ els.errBox.textContent = '⚠️ Runtime error: '+ (e&&e.message? e.message: e); els.errBox.style.display='block'; state.lastError=String(e); }
+      finally{ save(state); updateStats(); }
+    }
+
+    function next(){ safe(()=>{
+      answered=false; currentQ = makeQuestion();
+      els.qText.textContent = `${PERSONS[currentQ.personIdx][0]} — ${currentQ.verb.inf} • ${TENSES[currentQ.tense]}`;
+      els.ctxText.textContent = 'Context: '+ (state.cloze? currentQ.ctxMasked : currentQ.ctxFull);
+      renderRef(currentQ); renderChoices(currentQ);
+      els.typed.value=''; els.feedback.textContent='';
+    }); }
+
+    function renderChoices(q){
+      els.typeWrap.style.display = state.typeMode? 'flex':'none';
+      els.choices.style.display = state.typeMode? 'none':'grid';
+      els.choices.innerHTML = '';
+      if(!state.typeMode){ q.choices.forEach(ch=>{ const b=document.createElement('button'); b.className='btn'; b.textContent=ch; b.disabled=answered; b.onclick=()=> check(ch); els.choices.appendChild(b); }); }
+    }
+
+    function check(ans){
+      if(answered) return; answered=true; const expected=currentQ.answer;
+      const proposed = state.typeMode? els.typed.value : ans;
+      const ok = state.strict ? (proposed? proposed.trim()===expected.trim(): false) : normalize(proposed)===normalize(expected);
+      award(ok); showFeedback(ok,currentQ); save(state); setTimeout(next, 600);
+    }
+
+    // Events
+    els.tenseSel.onchange = ()=>{ state.tense=els.tenseSel.value; save(state); if(state.lockTense) next(); };
+    els.lockTense.onchange = ()=>{ state.lockTense=els.lockTense.checked; save(state); next(); };
+    els.strictMode.onchange = ()=>{ state.strict=els.strictMode.checked; save(state); };
+    els.typeMode.onchange = ()=>{ state.typeMode=els.typeMode.checked; save(state); renderChoices(currentQ||makeQuestion()); };
+    els.clozeMode.onchange = ()=>{ state.cloze=els.clozeMode.checked; save(state); els.ctxText.textContent = 'Context: '+ (state.cloze? currentQ.ctxMasked : currentQ.ctxFull); };
+    els.verbSel.onchange = ()=>{ state.verb=els.verbSel.value; save(state); next(); };
+    els.resetBtn.onclick = ()=>{ localStorage.removeItem(storeKey); location.reload(); };
+    els.checkBtn.onclick = ()=> check();
+    els.nextBtn.onclick = ()=> next();
+    els.speakBtn.onclick = ()=> currentQ && speak(currentQ.answer);
+    els.speakCtxBtn.onclick = ()=> currentQ && speak(currentQ.ctxFull);
+
+    next(); updateStats();
+  })();
+  </script>
+</body>
+</html>
